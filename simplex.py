@@ -39,7 +39,7 @@ def init_tablero(c, A, b, signos, BIG_M=1e6):
             tablero[-1, col] = BIG_M
             cont_a += 1
             col += 1
-        
+
         elif signo == '=':
             tablero[i, col] = 1.0
             columnas.append(f"A{cont_a}")
@@ -52,19 +52,17 @@ def init_tablero(c, A, b, signos, BIG_M=1e6):
     tablero[-1, :num_vars] = -c
     for i, signo in enumerate(signos):
         if signo in ('>=', '='):
-            # La fila Z tiene +M en la col de la artificial; hay que restarle M * fila_i
-            idx_art = columnas.index(base[i])
             tablero[-1] -= BIG_M * tablero[i]
 
     return tablero, columnas, base
 
 
 def resolver(c, A, b, signos, es_max, BIG_M=1e6):
-    c = np.asarray(c, dtype=float)
-    A = np.asarray(A, dtype=float)
-    b = np.asarray(b, dtype=float)
+    c = np.array(c, dtype=float)
+    A = np.array(A, dtype=float)
+    b = np.array(b, dtype=float)
+    signos = list(signos)
 
-    # Normalizar filas con RHS negativo (multiplicar por -1 e invertir signo)
     for i in range(len(b)):
         if b[i] < 0:
             A[i] = -A[i]
@@ -74,8 +72,7 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
     c_calc = c.copy() if es_max else -c.copy()
     tablero, columnas, base = init_tablero(c_calc, A, b, signos, BIG_M)
 
-    n_cols_decision = len(c)
-    nombres_artificiales = [col for col in columnas if col.startswith('A')]
+    base_inicial = list(base)
 
     historial = [{
         'iteracion': 0,
@@ -87,7 +84,6 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
     max_iter = 300
 
     while iteracion < max_iter:
-        # Criterio de optimalidad: todos los coefs de Z >= 0
         if np.all(tablero[-1, :-1] >= -1e-8):
             break
 
@@ -109,10 +105,7 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
         entra = columnas[col_piv]
         sale = base[fila_piv]
 
-        # Guardar ratios legibles para mostrar en la tabla
-        ratios_str = []
-        for r in ratios:
-            ratios_str.append("∞" if np.isinf(r) else f"{r:.4f}")
+        ratios_str = ["inf" if np.isinf(r) else f"{r:.4f}" for r in ratios]
 
         base[fila_piv] = entra
         tablero[fila_piv] = tablero[fila_piv] / pivote_val
@@ -127,12 +120,9 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
             'entra': entra,
             'sale': sale,
             'pivote': pivote_val,
-            'col_piv': col_piv,
-            'fila_piv': fila_piv,
             'ratios': ratios_str
         })
 
-    # Detectar infactibilidad 
     for i, var_base in enumerate(base):
         if var_base.startswith('A') and abs(tablero[i, -1]) > 1e-4:
             raise ValueError(
@@ -140,7 +130,6 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
                 f"permanece en la base con valor {tablero[i, -1]:.4f}."
             )
 
-    # Extraer solucion optima
     n_vars = len(c)
     x_opt = np.zeros(n_vars)
     for i in range(n_vars):
@@ -153,10 +142,8 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
             idx = int(np.where(np.isclose(col_data, 1, atol=1e-6))[0][0])
             x_opt[i] = float(tablero[idx, -1])
 
-    # Z real siempre calculado con el c original (no negado)
     z_opt = float(c @ x_opt)
 
-    # Detectar soluciones múltiples
     variables_no_basicas = [columnas[j] for j in range(n_vars) if columnas[j] not in base]
     multiples = any(
         abs(tablero[-1, columnas.index(v)]) < 1e-8
@@ -172,5 +159,120 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
         'tablero_final': tablero,
         'columnas': columnas,
         'base_final': base,
+        'base_inicial': base_inicial,
         'soluciones_multiples': multiples
     }
+
+
+def analisis_sensibilidad(resultado, c, A, b, signos, es_max):
+    tablero = resultado['tablero_final']
+    columnas = resultado['columnas']
+    base = resultado['base_final']
+    base_ini = resultado['base_inicial']
+
+    c = np.asarray(c, dtype=float)
+    A = np.asarray(A, dtype=float)
+    b = np.asarray(b, dtype=float)
+
+    n_vars = len(c)
+    n_restr = A.shape[0]
+
+    B_inv = np.zeros((n_restr, n_restr))
+    for i, var in enumerate(base_ini):
+        if var in columnas:
+            col_idx = columnas.index(var)
+            B_inv[:, i] = tablero[:-1, col_idx]
+        else:
+            B_inv[i, i] = 1.0
+
+    x_opt = resultado['x_opt']
+
+    filas_vars = []
+    for j in range(n_vars):
+        var_name = f"X{j+1}"
+        val = x_opt[j]
+        costo_red = float(tablero[-1, j])
+        coef = float(c[j])
+
+        if var_name not in base:
+            if es_max:
+                aum = abs(costo_red)
+                dis = float('inf')
+            else:
+                aum = float('inf')
+                dis = abs(costo_red)
+        else:
+            fila_k = base.index(var_name)
+            aum = float('inf')
+            dis = float('inf')
+            for m in range(tablero.shape[1] - 1):
+                col_name = columnas[m]
+                if col_name in base or col_name.startswith('A'):
+                    continue
+                a_km = float(tablero[fila_k, m])
+                c_red_m = float(tablero[-1, m])
+                if a_km > 1e-8:
+                    val_r = c_red_m / a_km
+                    if val_r < dis:
+                        dis = val_r
+                elif a_km < -1e-8:
+                    val_r = -c_red_m / a_km
+                    if val_r < aum:
+                        aum = val_r
+            if not es_max:
+                aum, dis = dis, aum
+
+        filas_vars.append([
+            var_name,
+            round(float(val), 4),
+            round(costo_red if es_max else -costo_red, 4),
+            round(coef, 4),
+            'Inf' if aum == float('inf') else round(aum, 4),
+            'Inf' if dis == float('inf') else round(dis, 4)
+        ])
+
+    df_vars = pd.DataFrame(filas_vars, columns=[
+        'Variable', 'Valor Final', 'Costo Reducido', 'Coef. Original',
+        'Aumento Permisible', 'Disminucion Permisible'
+    ])
+
+    c_B = np.array([float(c[int(v[1:])-1]) if v.startswith('X') else 0.0 for v in base])
+    sombras = c_B @ B_inv
+    if not es_max:
+        sombras = -sombras
+
+    uso = A @ x_opt
+    x_B = tablero[:-1, -1]
+
+    filas_rest = []
+    for k in range(n_restr):
+        col_k = B_inv[:, k]
+        aum_rhs = float('inf')
+        dis_rhs = float('inf')
+        for i in range(n_restr):
+            v = col_k[i]
+            xb = x_B[i]
+            if v > 1e-8:
+                val_r = xb / v
+                if val_r < dis_rhs:
+                    dis_rhs = val_r
+            elif v < -1e-8:
+                val_r = -xb / v
+                if val_r < aum_rhs:
+                    aum_rhs = val_r
+
+        filas_rest.append([
+            f'R{k+1}',
+            round(float(uso[k]), 4),
+            round(float(sombras[k]), 4),
+            round(float(b[k]), 4),
+            'Inf' if aum_rhs == float('inf') else round(aum_rhs, 4),
+            'Inf' if dis_rhs == float('inf') else round(dis_rhs, 4)
+        ])
+
+    df_rest = pd.DataFrame(filas_rest, columns=[
+        'Restriccion', 'Uso Final', 'Precio Sombra', 'RHS Original',
+        'Aumento Permisible', 'Disminucion Permisible'
+    ])
+
+    return df_vars, df_rest
