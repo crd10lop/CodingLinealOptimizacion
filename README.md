@@ -6,9 +6,9 @@ Aplicacion web interactiva para resolver problemas de programacion lineal usando
 
 | Nombre | Correo |
 |---|---|
-| Juan Pablo Uribe González | [juan.uribe4@udea.edu.co] |
-| Cristian David Diez López | [cristian.diez@udea.edu.co] |
-| Zareth Mariana Vega Sánchez | [zarethmariana.vega@udea.edu.co] |
+| Juan Pablo Uribe González | juan.uribe4@udea.edu.co |
+| Cristian David Diez López | cristian.diez@udea.edu.co |
+| Zareth Mariana Vega Sánchez | zarethmariana.vega@udea.edu.co |
 
 ## Curso
 
