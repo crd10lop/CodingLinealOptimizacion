@@ -22,6 +22,12 @@ Aplicacion web interactiva para resolver problemas de programacion lineal usando
 Este proyecto hace parte de la actividad de programación lineal del curso de Optimización. El equipo tuvo asignado el algoritmo **Harmony Search** como método metaheurístico a estudiar e implementar. A partir de un notebook desarrollado en Google Colab, se construyó una aplicación web interactiva con Streamlit que permite comparar el método exacto Simplex (Gran M) con Harmony Search, incluyendo análisis de sensibilidad y visualizaciones 2D y 3D generadas con Plotly.
 
 
+## Despliegue en Streamlit Community Cloud (gratuito)
+
+Como la app esta pensada para verse sin instalar nada localmente, se publico con el siguiente enlace: 
+**[codinglinealoptimizacion.streamlit.app](https://codinglinealoptimizacion.streamlit.app).**
+
+
 ## Estructura del proyecto
 
 ```
@@ -35,10 +41,6 @@ Este proyecto hace parte de la actividad de programación lineal del curso de Op
 └── Programación_lineal.ipynb    Notebook original (referencia)
 ```
 
-## Despliegue en Streamlit Community Cloud (gratuito)
-
-Como la app esta pensada para verse sin instalar nada localmente, se publico con el siguiente enlace: 
-*`https://codinglinealoptimizacion.streamlit.app/`.*
 
 
 ## Como usar la app
