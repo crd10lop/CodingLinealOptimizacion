@@ -83,7 +83,7 @@ with st.sidebar:
     defaults_c = [3.0, 5.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     for i in range(n_vars):
         with cols_c[i]:
-            c_vals.append(st.number_input(f"c{i+1}", value=defaults_c[i], step=1.0, key=f"c_{i}"))
+            c_vals.append(st.number_input(f"c{i+1}", value=defaults_c[i], step=1.0, format="%g", key=f"c_{i}"))
 
     st.divider()
     st.subheader("Restricciones")
@@ -110,7 +110,7 @@ with st.sidebar:
             with cols[j]:
                 default_val = defaults_A[i][j] if i < len(defaults_A) and j < len(defaults_A[i]) else 0.0
                 fila.append(st.number_input(
-                    f"a{i+1},{j+1}", value=default_val, step=1.0,
+                    f"a{i+1},{j+1}", value=default_val, step=1.0, format="%g",
                     key=f"a_{i}_{j}", label_visibility="collapsed"
                 ))
         with cols[n_vars]:
@@ -120,7 +120,7 @@ with st.sidebar:
         with cols[n_vars + 1]:
             b_def = defaults_b[i] if i < len(defaults_b) else 0.0
             b_vals.append(st.number_input(
-                f"b{i+1}", value=b_def, step=1.0,
+                f"b{i+1}", value=b_def, step=1.0, format="%g",
                 key=f"b_{i}", label_visibility="collapsed"
             ))
         A_vals.append(fila)
@@ -151,7 +151,7 @@ with st.sidebar:
         ub_vals = []
         for i in range(n_vars):
             with cols_ub[i]:
-                ub_vals.append(st.number_input(f"ub {nombres_side[i]}", value=20.0, step=1.0, key=f"ub_{i}"))
+                ub_vals.append(st.number_input(f"ub {nombres_side[i]}", value=20.0, step=1.0, format="%g", key=f"ub_{i}"))
     else:
         HMS, HMCR, PAR, BW, NI, seed = 20, 0.85, 0.35, 0.05, 5000, 42
         ub_vals = [20.0] * n_vars
@@ -164,6 +164,21 @@ c_arr  = np.array(c_vals, dtype=float)
 A_arr  = np.array(A_vals, dtype=float)
 b_arr  = np.array(b_vals, dtype=float)
 ub_arr = np.array(ub_vals, dtype=float)
+
+
+def validar_entradas():
+    errores = []
+    if not np.all(np.isfinite(c_arr)):
+        errores.append("Los coeficientes de la funcion objetivo contienen valores invalidos (NaN o infinito).")
+    if not np.all(np.isfinite(A_arr)):
+        errores.append("La matriz de restricciones contiene valores invalidos (NaN o infinito).")
+    if not np.all(np.isfinite(b_arr)):
+        errores.append("Los valores del lado derecho (b) contienen valores invalidos (NaN o infinito).")
+    if usar_hs and not np.all(np.isfinite(ub_arr)):
+        errores.append("Los limites superiores de Harmony Search contienen valores invalidos.")
+    if usar_hs and np.any(ub_arr <= 0):
+        errores.append("Los limites superiores de Harmony Search deben ser positivos.")
+    return errores
 
 
 def resolver_problema():
@@ -209,13 +224,18 @@ def resolver_problema():
 
 
 if boton_resolver:
-    with st.spinner("Calculando..."):
-        st.session_state.resultados = resolver_problema()
-        st.session_state.config = {
-            'n_vars': int(n_vars), 'n_rest': int(n_rest), 'es_max': es_max,
-            'c': c_arr.copy(), 'A': A_arr.copy(), 'b': b_arr.copy(),
-            'signos': list(signos), 'usar_simplex': usar_simplex, 'usar_hs': usar_hs
-        }
+    errores_entrada = validar_entradas()
+    if errores_entrada:
+        for msg in errores_entrada:
+            st.sidebar.error(msg)
+    else:
+        with st.spinner("Calculando..."):
+            st.session_state.resultados = resolver_problema()
+            st.session_state.config = {
+                'n_vars': int(n_vars), 'n_rest': int(n_rest), 'es_max': es_max,
+                'c': c_arr.copy(), 'A': A_arr.copy(), 'b': b_arr.copy(),
+                'signos': list(signos), 'usar_simplex': usar_simplex, 'usar_hs': usar_hs
+            }
 
 
 tab_problema, tab_simplex, tab_hs, tab_comp = st.tabs(
