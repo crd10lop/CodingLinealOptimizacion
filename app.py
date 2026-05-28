@@ -8,6 +8,36 @@ import harmony_search
 import graficos
 
 
+def _centrar(styler):
+    return styler.set_table_styles([
+        {'selector': 'th', 'props': [('text-align', 'center'), ('vertical-align', 'middle')]},
+        {'selector': 'td', 'props': [('text-align', 'center')]},
+    ])
+
+
+def tabla(df, fmt=None):
+    sty = df.style
+    if fmt is not None:
+        sty = sty.format(fmt)
+    sty = sty.hide(axis='index')
+    return _centrar(sty)
+
+
+def tabla_tablero(df, entra=None, sale=None):
+    def colorear(_):
+        s = pd.DataFrame('', index=df.index, columns=df.columns)
+        if entra is not None and entra in df.columns:
+            s.loc[:, entra] = 'background-color: #bee3f8'
+        if sale is not None and sale in df.index:
+            s.loc[sale, :] = 'background-color: #fed7d7'
+        if (entra is not None and sale is not None
+                and entra in df.columns and sale in df.index):
+            s.loc[sale, entra] = 'background-color: #f6e05e; font-weight: 700'
+        return s
+    sty = df.style.apply(colorear, axis=None).format('{:.4f}')
+    return _centrar(sty)
+
+
 st.set_page_config(
     page_title="Optimizacion Lineal",
     layout="wide",
@@ -22,6 +52,9 @@ st.markdown("""
     h3 { color: #2d3748; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] { padding: 0.5rem 1.2rem; }
+    [data-testid="stTable"] { overflow-x: auto; }
+    [data-testid="stTable"] table { margin-left: auto; margin-right: auto; }
+    [data-testid="stTable"] th, [data-testid="stTable"] td { text-align: center !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -42,7 +75,8 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Funcion Objetivo")
-    st.caption("Z = " + " + ".join([f"c{i+1}·X{i+1}" for i in range(n_vars)]))
+    nombres_side = simplex.nombres_variables(n_vars)
+    st.caption("Z = " + " + ".join([f"c{i+1}·{nombres_side[i]}" for i in range(n_vars)]))
 
     cols_c = st.columns(n_vars)
     c_vals = []
@@ -117,7 +151,7 @@ with st.sidebar:
         ub_vals = []
         for i in range(n_vars):
             with cols_ub[i]:
-                ub_vals.append(st.number_input(f"ub X{i+1}", value=20.0, step=1.0, key=f"ub_{i}"))
+                ub_vals.append(st.number_input(f"ub {nombres_side[i]}", value=20.0, step=1.0, key=f"ub_{i}"))
     else:
         HMS, HMCR, PAR, BW, NI, seed = 20, 0.85, 0.35, 0.05, 5000, 42
         ub_vals = [20.0] * n_vars
@@ -193,22 +227,23 @@ with tab_problema:
     st.header("Planteamiento del problema")
 
     accion = "Maximizar" if es_max else "Minimizar"
-    fo = " + ".join([f"{c_vals[i]:g}·X{i+1}" for i in range(n_vars)])
-    st.markdown(f"**{accion}** &nbsp; Z = {fo}")
+    nombres_prob = simplex.nombres_variables(n_vars)
+    st.markdown(f"**{accion}** &nbsp; Z = {graficos.expresion_objetivo(c_arr)}")
 
     st.markdown("**Sujeto a:**")
     for i in range(n_rest):
         partes = []
         for j in range(n_vars):
-            if A_vals[i][j] != 0:
-                sep = " + " if A_vals[i][j] >= 0 and partes else (" - " if A_vals[i][j] < 0 and partes else ("" if A_vals[i][j] >= 0 else "-"))
-                coef_abs = abs(A_vals[i][j])
+            coef = A_vals[i][j]
+            if coef != 0:
+                sep = " + " if coef >= 0 and partes else (" - " if coef < 0 and partes else ("" if coef >= 0 else "-"))
+                coef_abs = abs(coef)
                 coef_str = "" if coef_abs == 1 else f"{coef_abs:g}·"
-                partes.append(f"{sep}{coef_str}X{j+1}")
+                partes.append(f"{sep}{coef_str}{nombres_prob[j]}")
         if not partes:
             partes = ["0"]
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{''.join(partes)} {signos[i]} {b_vals[i]:g}")
-    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;Xi >= 0 &nbsp; para i = 1, ..., {n_vars}")
+    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{', '.join(nombres_prob)} >= 0")
 
     st.divider()
 
@@ -238,13 +273,22 @@ with tab_simplex:
     elif not st.session_state.config.get('usar_simplex'):
         st.warning("El metodo Simplex no esta seleccionado.")
     elif st.session_state.resultados.get('simplex_error'):
-        st.error(f"Error: {st.session_state.resultados['simplex_error']}")
+        st.error(f"No se pudo resolver con Simplex: {st.session_state.resultados['simplex_error']}")
+        cfg = st.session_state.config
+        if cfg['n_vars'] == 2:
+            st.subheader("Region factible 2D (sin optimo)")
+            try:
+                fig2d = graficos.grafico_region_2d(cfg['c'], cfg['A'], cfg['b'], cfg['signos'])
+                st.plotly_chart(fig2d, use_container_width=True)
+            except Exception:
+                st.warning("Tampoco se pudo generar la grafica 2D para este problema.")
+        st.info("No se puede generar la grafica 3D para este caso.")
     else:
         res_s = st.session_state.resultados['simplex']
         cfg   = st.session_state.config
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Z optima", f"{res_s['z_opt']:.4f}")
+        col1.metric("Z optima (maximo)" if cfg['es_max'] else "Z optima (minimo)", f"{res_s['z_opt']:.4f}")
         col2.metric("Iteraciones", res_s['iteraciones'])
         col3.metric("Tiempo", f"{res_s['tiempo']*1000:.2f} ms")
 
@@ -255,31 +299,60 @@ with tab_simplex:
                 "vertice optimo; existen otros vertices con el mismo Z."
             )
 
+        nombres_s = simplex.nombres_variables(cfg['n_vars'])
+
+        extremos = graficos.extremos_objetivo(cfg['c'], cfg['A'], cfg['b'], cfg['signos'])
+        if extremos is not None:
+            st.subheader("Valor maximo y minimo en la region factible")
+            punto_max = ", ".join(f"{nombres_s[i]}={extremos['x_max'][i]:.2f}" for i in range(cfg['n_vars']))
+            punto_min = ", ".join(f"{nombres_s[i]}={extremos['x_min'][i]:.2f}" for i in range(cfg['n_vars']))
+            cmax, cmin = st.columns(2)
+            cmax.metric("Z maximo", f"{extremos['z_max']:.4f}")
+            cmax.caption(f"en ({punto_max})")
+            cmin.metric("Z minimo", f"{extremos['z_min']:.4f}")
+            cmin.caption(f"en ({punto_min})")
+
         df_x = pd.DataFrame({
-            'Variable': [f'X{i+1}' for i in range(cfg['n_vars'])],
+            'Variable': nombres_s,
             'Valor Optimo': np.round(res_s['x_opt'], 4)
         })
         st.subheader("Valores optimos")
-        st.dataframe(df_x, use_container_width=True, hide_index=True)
+        st.table(tabla(df_x))
 
         st.subheader("Evolucion tabular")
-        for paso in res_s['historial']:
+        st.caption(
+            "Columna azul: variable que entra · Fila roja: variable que sale · "
+            "Celda amarilla: elemento pivote."
+        )
+        historial = res_s['historial']
+        for idx, paso in enumerate(historial):
+            entra_col = None
+            sale_row = None
+            siguiente = historial[idx + 1] if idx + 1 < len(historial) else None
+
             if paso['iteracion'] == 0:
                 st.markdown("**Tablero inicial**")
             else:
-                st.markdown(
-                    f"**Iteracion {paso['iteracion']}** — "
-                    f"Entra: `{paso['entra']}`, Sale: `{paso['sale']}`, "
-                    f"Pivote: `{paso['pivote']:.4f}`"
+                st.markdown(f"**Iteracion {paso['iteracion']}**")
+
+            if siguiente is not None:
+                entra_col = siguiente['entra']
+                sale_row = siguiente['sale']
+                st.caption(
+                    f"Entra: {entra_col}  ·  Sale: {sale_row}  ·  "
+                    f"Pivote: {siguiente['pivote']:.4f}"
                 )
-                if paso.get('ratios'):
-                    with st.expander("Ver razones (Regla de la razón minima)"):
+                if siguiente.get('ratios'):
+                    with st.expander("Ver razones (regla de la razon minima)"):
                         df_ratios = pd.DataFrame({
-                            'Variable base': res_s['historial'][paso['iteracion'] - 1]['tablero'].index[:-1].tolist(),
-                            'Razon b/a': paso['ratios']
+                            'Variable base': paso['tablero'].index[:-1].tolist(),
+                            'Razon b/a': siguiente['ratios']
                         })
-                        st.dataframe(df_ratios, use_container_width=True, hide_index=True)
-            st.dataframe(paso['tablero'], use_container_width=True)
+                        st.table(tabla(df_ratios))
+            else:
+                st.caption("Tablero optimo: no hay coeficientes negativos en la fila Z.")
+
+            st.table(tabla_tablero(paso['tablero'], entra_col, sale_row))
 
         if res_s.get('sens_vars') is not None:
             st.subheader("Analisis de Sensibilidad")
@@ -288,18 +361,21 @@ with tab_simplex:
             col_sv, col_sr = st.columns(2)
             with col_sv:
                 st.markdown("**Reporte de Variables (Coeficientes de Z)**")
-                st.dataframe(res_s['sens_vars'], use_container_width=True, hide_index=True)
+                st.table(tabla(res_s['sens_vars']))
             with col_sr:
                 st.markdown("**Reporte de Restricciones (RHS)**")
-                st.dataframe(res_s['sens_rest'], use_container_width=True, hide_index=True)
+                st.table(tabla(res_s['sens_rest']))
 
         if cfg['n_vars'] == 2:
             st.subheader("Region factible 2D")
-            fig2d = graficos.grafico_region_2d(
-                cfg['c'], cfg['A'], cfg['b'], cfg['signos'],
-                res_s['x_opt'], res_s['z_opt'], cfg['es_max']
-            )
-            st.plotly_chart(fig2d, use_container_width=True)
+            try:
+                fig2d = graficos.grafico_region_2d(
+                    cfg['c'], cfg['A'], cfg['b'], cfg['signos'],
+                    res_s['x_opt'], res_s['z_opt'], cfg['es_max']
+                )
+                st.plotly_chart(fig2d, use_container_width=True)
+            except Exception:
+                st.warning("No se pudo generar la grafica 2D para este problema.")
 
             st.subheader("Funcion objetivo en 3D")
             fig3d = graficos.grafico_objetivo_3d(
@@ -308,6 +384,8 @@ with tab_simplex:
             )
             if fig3d is not None:
                 st.plotly_chart(fig3d, use_container_width=True)
+            else:
+                st.info("No se puede generar la grafica 3D para este problema.")
 
         elif cfg['n_vars'] == 3:
             st.subheader("Region factible 3D (poliedro)")
@@ -318,7 +396,10 @@ with tab_simplex:
             if fig3d is not None:
                 st.plotly_chart(fig3d, use_container_width=True)
             else:
-                st.warning("No se encontraron vertices factibles para graficar.")
+                st.warning(
+                    "No se puede generar la grafica 3D: no se encontraron vertices "
+                    "factibles o el problema no esta acotado."
+                )
         else:
             st.info(
                 f"La visualizacion grafica esta disponible para 2 o 3 variables. "
@@ -352,11 +433,11 @@ with tab_hs:
             )
 
         df_x = pd.DataFrame({
-            'Variable': [f'X{i+1}' for i in range(cfg['n_vars'])],
+            'Variable': simplex.nombres_variables(cfg['n_vars']),
             'Valor': np.round(res_h['x_opt'], 4)
         })
         st.subheader("Valores encontrados")
-        st.dataframe(df_x, use_container_width=True, hide_index=True)
+        st.table(tabla(df_x))
 
         st.subheader("Verificacion de restricciones")
         df_v = pd.DataFrame(res_h['verificacion'])
@@ -364,11 +445,14 @@ with tab_hs:
         df_v['Estado'] = df_v['cumple'].map({True: 'OK', False: 'VIOLADA'})
         df_v = df_v[['restriccion', 'lhs', 'signo', 'rhs', 'Estado']]
         df_v.columns = ['Restriccion', 'Lado Izquierdo', 'Signo', 'Lado Derecho', 'Estado']
-        st.dataframe(df_v, use_container_width=True, hide_index=True)
+        st.table(tabla(df_v))
 
         st.subheader("Convergencia")
-        fig_conv = graficos.grafico_convergencia(res_h['historia_fit'], res_h['historia_z'])
-        st.plotly_chart(fig_conv, use_container_width=True)
+        try:
+            fig_conv = graficos.grafico_convergencia(res_h['historia_fit'], res_h['historia_z'])
+            st.plotly_chart(fig_conv, use_container_width=True)
+        except Exception:
+            st.warning("No se pudo generar la grafica de convergencia.")
 
         st.subheader("Exploracion del espacio de busqueda")
         fig_exp = graficos.grafico_exploracion_3d(
@@ -378,7 +462,7 @@ with tab_hs:
         if fig_exp is not None:
             st.plotly_chart(fig_exp, use_container_width=True)
         else:
-            st.info("La visualizacion 3D requiere al menos 2 variables.")
+            st.info("No se puede generar la grafica 3D para este problema.")
 
         with st.expander("Parametros utilizados"):
             st.json(res_h['parametros'])
@@ -412,25 +496,26 @@ with tab_comp:
                     "Si" if res_h['factible'] else "No"
                 ]
             })
-            st.dataframe(df_comp, use_container_width=True, hide_index=True)
+            st.table(tabla(df_comp))
 
             diff = abs(res_s['z_opt'] - res_h['z_opt'])
             rel  = diff / abs(res_s['z_opt']) * 100 if res_s['z_opt'] != 0 else 0.0
             st.metric("|Z_simplex - Z_HS|", f"{diff:.4f}", f"{rel:.2f}% de diferencia")
 
+            nombres_c = simplex.nombres_variables(cfg['n_vars'])
             col_a, col_b = st.columns(2)
             with col_a:
                 st.markdown("**Solucion Simplex**")
-                st.dataframe(pd.DataFrame({
-                    'Variable': [f'X{i+1}' for i in range(cfg['n_vars'])],
+                st.table(tabla(pd.DataFrame({
+                    'Variable': nombres_c,
                     'Valor': np.round(res_s['x_opt'], 4)
-                }), use_container_width=True, hide_index=True)
+                })))
             with col_b:
                 st.markdown("**Solucion Harmony Search**")
-                st.dataframe(pd.DataFrame({
-                    'Variable': [f'X{i+1}' for i in range(cfg['n_vars'])],
+                st.table(tabla(pd.DataFrame({
+                    'Variable': nombres_c,
                     'Valor': np.round(res_h['x_opt'], 4)
-                }), use_container_width=True, hide_index=True)
+                })))
 
             if cfg['n_vars'] == 2:
                 st.subheader("Exploracion HS sobre la region factible")
@@ -440,6 +525,8 @@ with tab_comp:
                 )
                 if fig_comp is not None:
                     st.plotly_chart(fig_comp, use_container_width=True)
+                else:
+                    st.info("No se pudo generar la grafica de comparacion para este problema.")
         else:
             st.info("Active ambos metodos en el panel lateral y resuelva el problema para comparar.")
 
