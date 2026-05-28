@@ -2,6 +2,20 @@ import numpy as np
 import pandas as pd
 
 
+NOMBRES_VARIABLES = ['X', 'Y', 'Z', 'P', 'Q', 'U', 'V', 'W']
+FILA_OBJETIVO = "Z (objetivo)"
+
+
+def nombre_variable(i):
+    if i < len(NOMBRES_VARIABLES):
+        return NOMBRES_VARIABLES[i]
+    return f"V{i + 1}"
+
+
+def nombres_variables(n):
+    return [nombre_variable(i) for i in range(n)]
+
+
 def init_tablero(c, A, b, signos, BIG_M=1e6):
     num_restr, num_vars = A.shape
     n_holguras    = sum(1 for s in signos if s == '<=')
@@ -13,7 +27,7 @@ def init_tablero(c, A, b, signos, BIG_M=1e6):
     tablero[:num_restr, :num_vars] = A
     tablero[:num_restr, -1] = b
 
-    columnas = [f"X{i+1}" for i in range(num_vars)]
+    columnas = [nombre_variable(i) for i in range(num_vars)]
     base = [None] * num_restr
 
     col = num_vars
@@ -76,7 +90,7 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
 
     historial = [{
         'iteracion': 0,
-        'tablero': pd.DataFrame(np.round(tablero.copy(), 4), columns=columnas, index=base + ["Z"]),
+        'tablero': pd.DataFrame(np.round(tablero.copy(), 4), columns=columnas, index=base + [FILA_OBJETIVO]),
         'entra': None, 'sale': None, 'pivote': None, 'ratios': None
     }]
 
@@ -116,7 +130,7 @@ def resolver(c, A, b, signos, es_max, BIG_M=1e6):
         iteracion += 1
         historial.append({
             'iteracion': iteracion,
-            'tablero': pd.DataFrame(np.round(tablero.copy(), 4), columns=columnas, index=base + ["Z"]),
+            'tablero': pd.DataFrame(np.round(tablero.copy(), 4), columns=columnas, index=base + [FILA_OBJETIVO]),
             'entra': entra,
             'sale': sale,
             'pivote': pivote_val,
@@ -176,6 +190,7 @@ def analisis_sensibilidad(resultado, c, A, b, signos, es_max):
 
     n_vars = len(c)
     n_restr = A.shape[0]
+    idx_var = {nombre_variable(i): i for i in range(n_vars)}
 
     B_inv = np.zeros((n_restr, n_restr))
     for i, var in enumerate(base_ini):
@@ -189,7 +204,7 @@ def analisis_sensibilidad(resultado, c, A, b, signos, es_max):
 
     filas_vars = []
     for j in range(n_vars):
-        var_name = f"X{j+1}"
+        var_name = nombre_variable(j)
         val = x_opt[j]
         costo_red = float(tablero[-1, j])
         coef = float(c[j])
@@ -236,7 +251,7 @@ def analisis_sensibilidad(resultado, c, A, b, signos, es_max):
         'Aumento Permisible', 'Disminucion Permisible'
     ])
 
-    c_B = np.array([float(c[int(v[1:])-1]) if v.startswith('X') else 0.0 for v in base])
+    c_B = np.array([float(c[idx_var[v]]) if v in idx_var else 0.0 for v in base])
     sombras = c_B @ B_inv
     if not es_max:
         sombras = -sombras
